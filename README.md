@@ -10,11 +10,30 @@ Construido a partir del PRD v1.0 de Impressive Studio.
 
 - **Next.js 14** (App Router) + **React 18** + **TypeScript**
 - **Tailwind CSS** para la UI
-- **Zustand** (con persistencia en `localStorage`) como store del "grafo de trabajo"
+- **PostgreSQL** + **Prisma** como base de datos (backend en API Routes de Next.js)
+- **Auth.js (NextAuth v5)** con email + contraseña (multi-cuenta, sesiones JWT)
+- **Zustand** como store del "grafo de trabajo", **autoguardado** en el backend
 - **@dnd-kit** para drag & drop en el tablero Kanban
 - **lucide-react** para íconos
 
-> El MVP corre 100% en el cliente con datos sembrados (seed) y persistencia local, por lo que despliega en Vercel sin necesidad de backend ni base de datos. El modelo de datos ya usa una relación **tarea↔proyecto muchos-a-muchos** (multi-homing) para poder migrar a PostgreSQL sin rehacer el esquema.
+> Todo el trabajo (tareas, comentarios, notas, estados, objetivos, etc.) se guarda en el servidor: cada usuario tiene su **workspace** propio que se autoguarda con debounce ante cada cambio y se recarga al volver a entrar, desde cualquier dispositivo. El modelo de datos usa una relación **tarea↔proyecto muchos-a-muchos** (multi-homing).
+
+## Backend y persistencia
+
+- `prisma/schema.prisma`: tablas `User` y `Workspace` (un workspace por usuario; el grafo de trabajo se guarda en una columna `JSONB`).
+- `src/app/api/register`: alta de cuenta (hash de contraseña con bcrypt) + siembra del workspace.
+- `src/app/api/auth/[...nextauth]`: login/logout (Auth.js, credenciales).
+- `src/app/api/workspace`: `GET` carga el grafo de trabajo del usuario autenticado; `PUT` lo guarda.
+- `src/components/WorkspaceSync.tsx`: carga inicial + autoguardado (debounce 700 ms). El indicador "Guardando…/Guardado" vive en la barra superior.
+
+## Configuración (variables de entorno)
+
+Copia `.env.example` a `.env` y completa:
+
+```bash
+DATABASE_URL=postgresql://usuario:password@host/db?sslmode=require
+AUTH_SECRET=   # genera uno con: openssl rand -base64 32
+```
 
 ## Funcionalidades implementadas
 
@@ -42,10 +61,12 @@ Construido a partir del PRD v1.0 de Impressive Studio.
 
 ```bash
 npm install
+# con DATABASE_URL ya configurada en .env, crea las tablas:
+npm run db:push
 npm run dev
 ```
 
-Abre [http://localhost:3000](http://localhost:3000).
+Abre [http://localhost:3000](http://localhost:3000), crea una cuenta en **/register** y empieza.
 
 ## Atajos de teclado
 
@@ -54,24 +75,42 @@ Abre [http://localhost:3000](http://localhost:3000).
 
 ## Despliegue en Vercel
 
-1. Importa el repositorio en [vercel.com/new](https://vercel.com/new).
-2. Framework: **Next.js** (detección automática). No se requieren variables de entorno.
-3. Deploy.
+1. **Crea una base de datos PostgreSQL.** Lo más rápido:
+   - En el dashboard de Vercel → pestaña **Storage** → **Create Database** → **Postgres** (o **Neon**). Vercel inyecta las variables automáticamente.
+   - O usa [Neon](https://neon.tech) gratis y copia su connection string (la "pooled").
+2. **Configura las variables de entorno** del proyecto en Vercel (Settings → Environment Variables):
+   - `DATABASE_URL` → la cadena de conexión de tu Postgres.
+     (Si usaste la integración de Vercel Postgres, crea `DATABASE_URL` apuntando al valor de `POSTGRES_PRISMA_URL`.)
+   - `AUTH_SECRET` → resultado de `openssl rand -base64 32`.
+3. **Vuelve a desplegar** (Redeploy). El build crea las tablas automáticamente (`prisma db push`) y publica la app.
+4. Entra al link, ve a **/register**, crea tu cuenta y listo: todo queda guardado en la base de datos.
 
-Para restaurar los datos de demostración: **Administración → Restaurar demo**.
+> El build no falla si aún no configuras `DATABASE_URL` (se omite la creación de tablas), pero la app necesita la base de datos para registrar/iniciar sesión y guardar. Configúrala antes de usarla.
+
+Para restaurar los datos de demostración de tu workspace: **Administración → Restaurar demo**.
 
 ## Estructura
 
 ```
+prisma/
+  schema.prisma   # tablas User y Workspace (PostgreSQL)
+scripts/
+  db-setup.mjs    # crea/sincroniza tablas en el build de Vercel
 src/
-  app/            # rutas (App Router): home, my-tasks, inbox, reports,
+  app/
+    (auth)/       # login y register (sin shell)
+    (app)/        # app protegida: home, my-tasks, inbox, reports,
                   # portfolios, goals, admin, automations, project/[id]
-  components/     # AppShell, Sidebar, Topbar, modales y vistas
+    api/          # register, auth/[...nextauth], workspace (GET/PUT)
+  components/     # AppShell, Sidebar, Topbar, WorkspaceSync, modales y vistas
     views/        # ListView, BoardView, CalendarView, TimelineView, DashboardView
   lib/
     types.ts      # modelo de datos (grafo de trabajo)
     seed.ts       # datos de demostración
-    store.ts      # store Zustand + motor de reglas
+    workspace.ts  # forma serializable del workspace (servidor + cliente)
+    store.ts      # store Zustand + motor de reglas + sync
+    db.ts         # cliente Prisma (singleton)
+    auth.ts       # configuración de Auth.js (NextAuth)
     ui-store.ts   # estado de UI (modales)
     utils.ts      # helpers (fechas, prioridades, salud)
 ```

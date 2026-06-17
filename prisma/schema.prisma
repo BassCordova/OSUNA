@@ -1,0 +1,32 @@
+// OSUNA — esquema de base de datos (PostgreSQL)
+// Autenticación + un workspace por usuario que guarda todo el grafo de trabajo.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime   @default(now())
+  workspace    Workspace?
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Todo el grafo de trabajo (proyectos, secciones, tareas, comentarios, etc.)
+  data      Json
+  version   Int      @default(1)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

@@ -1,7 +1,6 @@
 "use client";
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 import type {
   User, Team, Project, Section, Task, CustomField, Notification,
@@ -9,6 +8,7 @@ import type {
   StatusUpdate, HealthColor,
 } from "./types";
 import * as seed from "./seed";
+import { defaultWorkspaceData, pickWorkspaceData, type WorkspaceData } from "./workspace";
 
 interface State {
   hydrated: boolean;
@@ -69,6 +69,10 @@ interface State {
   submitForm: (formId: ID, values: Record<string, string>) => void;
 
   resetDemo: () => void;
+
+  // sincronización con el backend
+  applyServerState: (data: WorkspaceData) => void;
+  snapshot: () => WorkspaceData;
 }
 
 const seedState = () => ({
@@ -89,7 +93,6 @@ const seedState = () => ({
 const nowISO = () => new Date().toISOString();
 
 export const useStore = create<State>()(
-  persist(
     (set, get) => ({
       hydrated: false,
       ...seedState(),
@@ -364,19 +367,12 @@ export const useStore = create<State>()(
         get().createTask({ name, description, priority, projectId: section.projectId, sectionId: section.id });
       },
 
-      resetDemo: () => set({ ...seedState() } as Partial<State>),
-    }),
-    {
-      name: "osuna-store-v1",
-      partialize: (s) => {
-        const { hydrated, ...rest } = s;
-        return rest as State;
-      },
-      onRehydrateStorage: () => (state) => {
-        if (state) state.hydrated = true;
-      },
-    }
-  )
+      resetDemo: () => set({ ...defaultWorkspaceData() } as Partial<State>),
+
+      applyServerState: (data) => set({ ...data, hydrated: true } as Partial<State>),
+
+      snapshot: () => pickWorkspaceData(get()),
+    })
 );
 
 // ----- Motor de reglas (disparador → acción) -----
