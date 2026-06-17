@@ -1,0 +1,456 @@
+"use client";
+
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { nanoid } from "nanoid";
+import type {
+  User, Team, Project, Section, Task, CustomField, Notification,
+  Portfolio, Goal, Rule, IntakeForm, ID, Comment, TaskMembership, Priority,
+  StatusUpdate, HealthColor,
+} from "./types";
+import * as seed from "./seed";
+
+interface State {
+  hydrated: boolean;
+  currentUserId: ID;
+  users: User[];
+  teams: Team[];
+  projects: Project[];
+  sections: Section[];
+  tasks: Task[];
+  customFields: CustomField[];
+  notifications: Notification[];
+  portfolios: Portfolio[];
+  goals: Goal[];
+  rules: Rule[];
+  forms: IntakeForm[];
+
+  // selectors
+  currentUser: () => User;
+  userById: (id?: ID) => User | undefined;
+  projectById: (id: ID) => Project | undefined;
+  sectionsOf: (projectId: ID) => Section[];
+  tasksOf: (projectId: ID) => Task[];
+  tasksInSection: (sectionId: ID) => Task[];
+  myTasks: () => Task[];
+  subtasksOf: (taskId: ID) => Task[];
+
+  // task actions
+  createTask: (input: Partial<Task> & { name: string; projectId: ID; sectionId: ID }) => Task;
+  updateTask: (id: ID, patch: Partial<Task>) => void;
+  toggleComplete: (id: ID) => void;
+  deleteTask: (id: ID) => void;
+  moveTask: (taskId: ID, toSectionId: ID, toIndex?: number) => void;
+  addToProject: (taskId: ID, projectId: ID, sectionId: ID) => void;
+  addComment: (taskId: ID, body: string) => void;
+  addSubtask: (parentId: ID, name: string) => void;
+
+  // project / section actions
+  createProject: (input: { name: string; teamId: ID; color?: string }) => Project;
+  addSection: (projectId: ID, name: string) => Section;
+  renameSection: (sectionId: ID, name: string) => void;
+  deleteSection: (sectionId: ID) => void;
+  toggleFavorite: (projectId: ID) => void;
+  publishStatusUpdate: (projectId: ID, health: HealthColor, summary: string) => void;
+
+  // notifications
+  markNotificationRead: (id: ID) => void;
+  markAllRead: () => void;
+  archiveNotification: (id: ID) => void;
+
+  // goals
+  updateGoalProgress: (goalId: ID, currentValue: number) => void;
+
+  // rules
+  toggleRule: (ruleId: ID) => void;
+  createRule: (rule: Omit<Rule, "id">) => void;
+
+  // forms
+  submitForm: (formId: ID, values: Record<string, string>) => void;
+
+  resetDemo: () => void;
+}
+
+const seedState = () => ({
+  currentUserId: seed.CURRENT_USER_ID,
+  users: seed.users,
+  teams: seed.teams,
+  projects: seed.projects,
+  sections: seed.sections,
+  tasks: seed.tasks,
+  customFields: seed.customFields,
+  notifications: seed.notifications,
+  portfolios: seed.portfolios,
+  goals: seed.goals,
+  rules: seed.rules,
+  forms: seed.forms,
+});
+
+const nowISO = () => new Date().toISOString();
+
+export const useStore = create<State>()(
+  persist(
+    (set, get) => ({
+      hydrated: false,
+      ...seedState(),
+
+      currentUser: () => {
+        const s = get();
+        return s.users.find((u) => u.id === s.currentUserId) || s.users[0];
+      },
+      userById: (id) => get().users.find((u) => u.id === id),
+      projectById: (id) => get().projects.find((p) => p.id === id),
+      sectionsOf: (projectId) =>
+        get().sections.filter((s) => s.projectId === projectId).sort((a, b) => a.order - b.order),
+      tasksOf: (projectId) =>
+        get().tasks.filter((t) => !t.parentId && t.memberships.some((m) => m.projectId === projectId)),
+      tasksInSection: (sectionId) =>
+        get().tasks
+          .filter((t) => !t.parentId && t.memberships.some((m) => m.sectionId === sectionId))
+          .sort((a, b) => a.order - b.order),
+      myTasks: () => {
+        const s = get();
+        return s.tasks.filter((t) => !t.parentId && t.assigneeId === s.currentUserId);
+      },
+      subtasksOf: (taskId) =>
+        get().tasks.filter((t) => t.parentId === taskId).sort((a, b) => a.order - b.order),
+
+      createTask: (input) => {
+        const { projectId, sectionId, ...rest } = input;
+        const order = get().tasksInSection(sectionId).length;
+        const task: Task = {
+          id: `task_${nanoid(8)}`,
+          name: input.name,
+          description: rest.description ?? "",
+          assigneeId: rest.assigneeId,
+          followerIds: rest.followerIds ?? [],
+          startDate: rest.startDate,
+          dueDate: rest.dueDate,
+          completed: false,
+          memberships: [{ projectId, sectionId }],
+          subtaskIds: [],
+          priority: rest.priority,
+          tags: rest.tags ?? [],
+          isMilestone: rest.isMilestone ?? false,
+          isApproval: rest.isApproval ?? false,
+          customFieldValues: rest.customFieldValues ?? {},
+          blockedByIds: [],
+          blockingIds: [],
+          comments: [],
+          attachments: [],
+          activity: [{ id: nanoid(6), actorId: get().currentUserId, text: "creó la tarea", createdAt: nowISO() }],
+          createdAt: nowISO(),
+          order,
+        };
+        set((s) => ({ tasks: [...s.tasks, task] }));
+        runRules(get, set, task.id, { type: "task_created", projectId });
+        if (task.assigneeId && task.assigneeId !== get().currentUserId) {
+          pushNotification(set, get, {
+            kind: "assigned", userId: task.assigneeId, taskId: task.id, projectId,
+            text: `te asignó «${task.name}»`,
+          });
+        }
+        return task;
+      },
+
+      updateTask: (id, patch) =>
+        set((s) => ({
+          tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+        })),
+
+      toggleComplete: (id) => {
+        const t = get().tasks.find((x) => x.id === id);
+        if (!t) return;
+        const completed = !t.completed;
+        set((s) => ({
+          tasks: s.tasks.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  completed,
+                  completedAt: completed ? nowISO() : undefined,
+                  activity: [
+                    ...x.activity,
+                    { id: nanoid(6), actorId: s.currentUserId, text: completed ? "completó la tarea" : "reabrió la tarea", createdAt: nowISO() },
+                  ],
+                }
+              : x
+          ),
+        }));
+        if (completed) {
+          runRules(get, set, id, { type: "task_completed" });
+          // liberar dependencias bloqueadas
+          const blocking = get().tasks.find((x) => x.id === id)?.blockingIds ?? [];
+          blocking.forEach((bid) => {
+            const bt = get().tasks.find((x) => x.id === bid);
+            if (bt?.assigneeId) {
+              pushNotification(set, get, {
+                kind: "status_change", userId: bt.assigneeId, taskId: bid,
+                text: `desbloqueó «${bt.name}» (se completó una dependencia)`,
+              });
+            }
+          });
+        }
+      },
+
+      deleteTask: (id) =>
+        set((s) => ({
+          tasks: s.tasks.filter((t) => t.id !== id && t.parentId !== id),
+        })),
+
+      moveTask: (taskId, toSectionId, toIndex) => {
+        const task = get().tasks.find((t) => t.id === taskId);
+        if (!task) return;
+        const toSection = get().sections.find((s) => s.id === toSectionId);
+        if (!toSection) return;
+        const fromMembership = task.memberships.find((m) =>
+          get().sections.find((s) => s.id === m.sectionId)?.projectId === toSection.projectId
+        );
+        const newMemberships: TaskMembership[] = task.memberships.map((m) =>
+          m === fromMembership ? { ...m, sectionId: toSectionId } : m
+        );
+        if (!fromMembership) newMemberships.push({ projectId: toSection.projectId, sectionId: toSectionId });
+
+        // reordenar dentro de la sección destino
+        const siblings = get()
+          .tasksInSection(toSectionId)
+          .filter((t) => t.id !== taskId);
+        const idx = toIndex ?? siblings.length;
+        siblings.splice(idx, 0, { ...task, memberships: newMemberships });
+
+        set((s) => ({
+          tasks: s.tasks.map((t) => {
+            if (t.id === taskId) return { ...t, memberships: newMemberships };
+            return t;
+          }),
+        }));
+        set((s) => ({
+          tasks: s.tasks.map((t) => {
+            const pos = siblings.findIndex((x) => x.id === t.id);
+            return pos >= 0 ? { ...t, order: pos } : t;
+          }),
+        }));
+        runRules(get, set, taskId, { type: "moved_to_section", sectionId: toSectionId });
+      },
+
+      addToProject: (taskId, projectId, sectionId) =>
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId && !t.memberships.some((m) => m.projectId === projectId)
+              ? { ...t, memberships: [...t.memberships, { projectId, sectionId }] }
+              : t
+          ),
+        })),
+
+      addComment: (taskId, body) => {
+        const comment: Comment = { id: nanoid(8), authorId: get().currentUserId, body, createdAt: nowISO() };
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId ? { ...t, comments: [...t.comments, comment] } : t
+          ),
+        }));
+        // @menciones → notificación
+        const task = get().tasks.find((t) => t.id === taskId);
+        get().users.forEach((u) => {
+          if (body.includes(`@${u.name}`) && u.id !== get().currentUserId) {
+            pushNotification(set, get, {
+              kind: "mention", userId: u.id, taskId,
+              text: `te mencionó en «${task?.name}»`,
+            });
+          }
+        });
+      },
+
+      addSubtask: (parentId, name) => {
+        const parent = get().tasks.find((t) => t.id === parentId);
+        if (!parent) return;
+        const membership = parent.memberships[0];
+        const sub: Task = {
+          id: `task_${nanoid(8)}`, name, followerIds: [], completed: false,
+          memberships: membership ? [membership] : [], parentId, subtaskIds: [],
+          tags: [], isMilestone: false, isApproval: false, customFieldValues: {},
+          blockedByIds: [], blockingIds: [], comments: [], attachments: [],
+          activity: [], createdAt: nowISO(), order: get().subtasksOf(parentId).length,
+        };
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === parentId ? { ...t, subtaskIds: [...t.subtaskIds, sub.id] } : t
+          ).concat(sub),
+        }));
+      },
+
+      createProject: (input) => {
+        const id = `p_${nanoid(8)}`;
+        const project: Project = {
+          id, name: input.name, teamId: input.teamId,
+          color: input.color ?? "#6b46e5", icon: "Folder", status: "active",
+          privacy: "public", defaultView: "board", ownerId: get().currentUserId,
+          memberIds: [get().currentUserId], customFieldIds: [], statusUpdates: [],
+        };
+        const baseSections: Section[] = ["Por hacer", "En progreso", "Completado"].map((name, i) => ({
+          id: `s_${nanoid(8)}`, name, order: i, projectId: id,
+        }));
+        set((s) => ({ projects: [...s.projects, project], sections: [...s.sections, ...baseSections] }));
+        return project;
+      },
+
+      addSection: (projectId, name) => {
+        const section: Section = {
+          id: `s_${nanoid(8)}`, name, projectId,
+          order: get().sectionsOf(projectId).length,
+        };
+        set((s) => ({ sections: [...s.sections, section] }));
+        return section;
+      },
+
+      renameSection: (sectionId, name) =>
+        set((s) => ({ sections: s.sections.map((x) => (x.id === sectionId ? { ...x, name } : x)) })),
+
+      deleteSection: (sectionId) =>
+        set((s) => ({
+          sections: s.sections.filter((x) => x.id !== sectionId),
+          tasks: s.tasks.map((t) => ({
+            ...t,
+            memberships: t.memberships.filter((m) => m.sectionId !== sectionId),
+          })).filter((t) => t.memberships.length > 0 || !!t.parentId),
+        })),
+
+      toggleFavorite: (projectId) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === projectId ? { ...p, favorite: !p.favorite } : p)),
+        })),
+
+      publishStatusUpdate: (projectId, health, summary) => {
+        const update: StatusUpdate = {
+          id: nanoid(8), health, summary, authorId: get().currentUserId, createdAt: nowISO(),
+        };
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === projectId ? { ...p, statusUpdates: [update, ...p.statusUpdates] } : p
+          ),
+        }));
+      },
+
+      markNotificationRead: (id) =>
+        set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
+      markAllRead: () =>
+        set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, read: true })) })),
+      archiveNotification: (id) =>
+        set((s) => ({ notifications: s.notifications.map((n) => (n.id === id ? { ...n, archived: true, read: true } : n)) })),
+
+      updateGoalProgress: (goalId, currentValue) =>
+        set((s) => ({ goals: s.goals.map((g) => (g.id === goalId ? { ...g, currentValue } : g)) })),
+
+      toggleRule: (ruleId) =>
+        set((s) => ({ rules: s.rules.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r)) })),
+      createRule: (rule) =>
+        set((s) => ({ rules: [...s.rules, { ...rule, id: `r_${nanoid(8)}` }] })),
+
+      submitForm: (formId, values) => {
+        const form = get().forms.find((f) => f.id === formId);
+        if (!form) return;
+        const section = get().sections.find((s) => s.id === form.targetSectionId);
+        if (!section) return;
+        let name = "Solicitud sin título";
+        let description = "";
+        let priority: Priority | undefined;
+        form.fields.forEach((f) => {
+          const v = values[f.id];
+          if (!v) return;
+          if (f.mapsTo === "name") name = v;
+          if (f.mapsTo === "description") description = v;
+          if (f.mapsTo === "priority") priority = v as Priority;
+        });
+        get().createTask({ name, description, priority, projectId: section.projectId, sectionId: section.id });
+      },
+
+      resetDemo: () => set({ ...seedState() } as Partial<State>),
+    }),
+    {
+      name: "osuna-store-v1",
+      partialize: (s) => {
+        const { hydrated, ...rest } = s;
+        return rest as State;
+      },
+      onRehydrateStorage: () => (state) => {
+        if (state) state.hydrated = true;
+      },
+    }
+  )
+);
+
+// ----- Motor de reglas (disparador → acción) -----
+function runRules(
+  get: () => State,
+  set: (partial: Partial<State> | ((s: State) => Partial<State>)) => void,
+  taskId: ID,
+  event: { type: Rule["trigger"]["type"]; sectionId?: ID; projectId?: ID }
+) {
+  const task = get().tasks.find((t) => t.id === taskId);
+  if (!task) return;
+  const projectIds = task.memberships.map((m) => m.projectId);
+  const rules = get().rules.filter(
+    (r) => r.enabled && projectIds.includes(r.projectId) && r.trigger.type === event.type
+  );
+  rules.forEach((rule) => {
+    if (rule.trigger.type === "moved_to_section" && rule.trigger.sectionId !== event.sectionId) return;
+    rule.actions.forEach((action) => {
+      set((s) => ({
+        tasks: s.tasks.map((t) => {
+          if (t.id !== taskId) return t;
+          switch (action.type) {
+            case "assign_to":
+              return { ...t, assigneeId: action.userId };
+            case "set_priority":
+              return { ...t, priority: action.priority };
+            case "set_field":
+              return action.fieldId
+                ? { ...t, customFieldValues: { ...t.customFieldValues, [action.fieldId]: action.value ?? "" } }
+                : t;
+            case "add_comment":
+              return {
+                ...t,
+                comments: [
+                  ...t.comments,
+                  { id: nanoid(8), authorId: "system", body: action.value ?? "", createdAt: nowISO() },
+                ],
+              };
+            default:
+              return t;
+          }
+        }),
+      }));
+      if (action.type === "move_to_section" && action.sectionId) {
+        // evitar recursión infinita: mover sin re-disparar moved_to_section
+        set((s) => ({
+          tasks: s.tasks.map((t) =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  memberships: t.memberships.map((m) =>
+                    m.projectId === rule.projectId ? { ...m, sectionId: action.sectionId! } : m
+                  ),
+                }
+              : t
+          ),
+        }));
+      }
+    });
+  });
+}
+
+function pushNotification(
+  set: (partial: Partial<State> | ((s: State) => Partial<State>)) => void,
+  get: () => State,
+  input: { kind: Notification["kind"]; userId: ID; taskId?: ID; projectId?: ID; text: string }
+) {
+  const notif: Notification = {
+    id: nanoid(8),
+    actorId: get().currentUserId,
+    createdAt: nowISO(),
+    read: false,
+    archived: false,
+    ...input,
+  };
+  set((s) => ({ notifications: [notif, ...s.notifications] }));
+}
