@@ -3,7 +3,16 @@
 // el frontend se despliega igual y las APIs avisarán hasta configurar la DB.
 import { execSync } from "node:child_process";
 
-const url = process.env.DATABASE_URL;
+// Acepta cualquiera de los nombres que usan las integraciones de Postgres de Vercel
+// (Vercel Postgres / Neon / Supabase) para no depender de configurar DATABASE_URL a mano.
+const url =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_PRISMA_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.DATABASE_URL_UNPOOLED ||
+  process.env.POSTGRES_URL_NON_POOLING;
+
+if (url) process.env.DATABASE_URL = url;
 
 if (!url) {
   console.warn(

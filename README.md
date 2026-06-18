@@ -80,8 +80,9 @@ Abre [http://localhost:3000](http://localhost:3000), crea una cuenta en **/regis
    - O usa [Neon](https://neon.tech) gratis y copia su connection string (la "pooled").
 2. **Configura las variables de entorno** del proyecto en Vercel (Settings → Environment Variables):
    - `DATABASE_URL` → la cadena de conexión de tu Postgres.
-     (Si usaste la integración de Vercel Postgres, crea `DATABASE_URL` apuntando al valor de `POSTGRES_PRISMA_URL`.)
-   - `AUTH_SECRET` → resultado de `openssl rand -base64 32`.
+     **No es necesario** si usaste la integración de Vercel Postgres / Neon: la app
+     detecta automáticamente `POSTGRES_PRISMA_URL` / `POSTGRES_URL` que esa integración inyecta.
+   - `AUTH_SECRET` → resultado de `openssl rand -base64 32` (obligatoria).
 3. **Vuelve a desplegar** (Redeploy). El build crea las tablas automáticamente (`prisma db push`) y publica la app.
 4. Entra al link, ve a **/register**, crea tu cuenta y listo: todo queda guardado en la base de datos.
 
