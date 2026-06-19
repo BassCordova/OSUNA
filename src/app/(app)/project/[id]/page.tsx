@@ -4,7 +4,7 @@ import { useState, use } from "react";
 import { useRouter } from "next/navigation";
 import {
   List, Kanban, Calendar, GanttChartSquare, LayoutDashboard, Star,
-  Filter, Users, Flag, CheckCircle2, X,
+  Filter, Users, Flag, CheckCircle2, X, MoreHorizontal, Pencil, Archive, Trash2,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ListView } from "@/components/views/ListView";
@@ -35,6 +35,9 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const userById = useStore((s) => s.userById);
   const toggleFavorite = useStore((s) => s.toggleFavorite);
   const publishStatusUpdate = useStore((s) => s.publishStatusUpdate);
+  const updateProject = useStore((s) => s.updateProject);
+  const archiveProject = useStore((s) => s.archiveProject);
+  const deleteProject = useStore((s) => s.deleteProject);
 
   const [view, setView] = useState<ProjectView>(project?.defaultView ?? "board");
   const [filterAssignee, setFilterAssignee] = useState<string>("");
@@ -42,6 +45,9 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [hideCompleted, setHideCompleted] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [statusModal, setStatusModal] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
 
   if (!project) {
     return (
@@ -77,10 +83,39 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-gray-900">{project.name}</h1>
+                {renaming ? (
+                  <form
+                    onSubmit={(e) => { e.preventDefault(); if (renameValue.trim()) updateProject(project.id, { name: renameValue.trim() }); setRenaming(false); }}
+                    className="flex items-center gap-1"
+                  >
+                    <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onBlur={() => setRenaming(false)} className="rounded-md border border-gray-200 px-2 py-0.5 text-lg font-bold outline-none focus:border-brand-400" />
+                  </form>
+                ) : (
+                  <h1 className="text-lg font-bold text-gray-900">{project.name}</h1>
+                )}
+                {project.status === "archived" && <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">Archivado</span>}
                 <button onClick={() => toggleFavorite(project.id)}>
                   <Star size={16} className={project.favorite ? "text-amber-400" : "text-gray-300 hover:text-amber-400"} fill={project.favorite ? "currentColor" : "none"} />
                 </button>
+                <div className="relative">
+                  <button onClick={() => setMenuOpen((v) => !v)} className="rounded p-1 text-gray-400 hover:bg-gray-100"><MoreHorizontal size={16} /></button>
+                  {menuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                      <div className="absolute left-0 top-8 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                        <button onClick={() => { setRenaming(true); setRenameValue(project.name); setMenuOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                          <Pencil size={14} className="text-gray-400" /> Renombrar
+                        </button>
+                        <button onClick={() => { archiveProject(project.id); setMenuOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                          <Archive size={14} className="text-gray-400" /> {project.status === "archived" ? "Desarchivar" : "Archivar"}
+                        </button>
+                        <button onClick={() => { if (confirm(`¿Eliminar el proyecto "${project.name}" y todas sus tareas? Esta acción no se puede deshacer.`)) { deleteProject(project.id); router.push("/"); } setMenuOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">
+                          <Trash2 size={14} /> Eliminar
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-gray-500">{team?.name} · {progress}% completado</p>
             </div>

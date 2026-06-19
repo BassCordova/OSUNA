@@ -1,9 +1,10 @@
 "use client";
 
-import { Target, Hash, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { Target, Hash, Plus } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Avatar } from "@/components/Avatar";
-import { Badge } from "@/components/ui";
+import { Badge, Button, Modal } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { Goal, GoalLevel } from "@/lib/types";
 
@@ -18,6 +19,14 @@ export default function GoalsPage() {
   const projects = useStore((s) => s.projects);
   const userById = useStore((s) => s.userById);
   const updateGoalProgress = useStore((s) => s.updateGoalProgress);
+  const createGoal = useStore((s) => s.createGoal);
+
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [level, setLevel] = useState<GoalLevel>("team");
+  const [metricLabel, setMetricLabel] = useState("");
+  const [targetValue, setTargetValue] = useState("100");
+  const [unit, setUnit] = useState("%");
 
   const topGoals = goals.filter((g) => !g.parentId);
   const childrenOf = (id: string) => goals.filter((g) => g.parentId === id);
@@ -76,16 +85,62 @@ export default function GoalsPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
-      <div className="mb-5 flex items-center gap-3">
-        <Target size={22} className="text-gray-500" />
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Objetivos</h1>
-          <p className="text-sm text-gray-500">Metas de la organización y equipos, con sub-objetivos vinculados</p>
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Target size={22} className="text-gray-500" />
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Objetivos</h1>
+            <p className="text-sm text-gray-500">Metas de la organización y equipos, con sub-objetivos vinculados</p>
+          </div>
         </div>
+        <Button variant="primary" onClick={() => setCreating(true)}><Plus size={15} /> Nuevo objetivo</Button>
       </div>
       <div className="space-y-3">
         {topGoals.map((g) => renderGoal(g))}
       </div>
+
+      <Modal open={creating} onClose={() => setCreating(false)} title="Nuevo objetivo">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!title.trim()) return;
+            createGoal({ title: title.trim(), level, metricLabel: metricLabel.trim() || undefined, targetValue: Number(targetValue) || 100, unit: unit.trim() || "%" });
+            setTitle(""); setMetricLabel(""); setTargetValue("100"); setUnit("%"); setCreating(false);
+          }}
+          className="space-y-3 px-5 pb-5 pt-3"
+        >
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Título</span>
+            <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} className="modal-input" placeholder="Ej. Crecer ingresos 30%" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-gray-500">Nivel</span>
+              <select value={level} onChange={(e) => setLevel(e.target.value as GoalLevel)} className="modal-input">
+                <option value="organization">Organización</option>
+                <option value="team">Equipo</option>
+                <option value="individual">Individual</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-gray-500">Métrica</span>
+              <input value={metricLabel} onChange={(e) => setMetricLabel(e.target.value)} className="modal-input" placeholder="Ej. Videos entregados" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-gray-500">Meta</span>
+              <input type="number" value={targetValue} onChange={(e) => setTargetValue(e.target.value)} className="modal-input" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-gray-500">Unidad</span>
+              <input value={unit} onChange={(e) => setUnit(e.target.value)} className="modal-input" placeholder="%, videos, x…" />
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" onClick={() => setCreating(false)}>Cancelar</Button>
+            <Button type="submit" variant="primary" disabled={!title.trim()}>Crear objetivo</Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

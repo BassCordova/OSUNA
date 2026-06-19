@@ -11,6 +11,7 @@ import { priorityMeta } from "@/lib/utils";
 
 export function QuickCreateModal() {
   const open = useUI((s) => s.quickCreateOpen);
+  const initialTab = useUI((s) => s.quickCreateTab);
   const setOpen = useUI((s) => s.setQuickCreate);
   const openTask = useUI((s) => s.openTask);
   const router = useRouter();
@@ -23,6 +24,11 @@ export function QuickCreateModal() {
   const createProject = useStore((s) => s.createProject);
 
   const [tab, setTab] = useState<"task" | "project">("task");
+
+  // Sincroniza la pestaña inicial cada vez que se abre
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open && !wasOpen) { setWasOpen(true); setTab(initialTab); }
+  if (!open && wasOpen) setWasOpen(false);
 
   // task form
   const [name, setName] = useState("");

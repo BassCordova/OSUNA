@@ -26,6 +26,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
   const projects = useStore((s) => s.projects);
   const notifications = useStore((s) => s.notifications);
   const setQuickCreate = useUI((s) => s.setQuickCreate);
+  const openQuickCreate = useUI((s) => s.openQuickCreate);
   const unread = notifications.filter((n) => !n.read && !n.archived).length;
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>(
@@ -106,7 +107,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           )}
 
           <div className="mt-4">
-            <div className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Equipos y proyectos</div>
+            <div className="flex items-center justify-between px-2.5 pb-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Equipos y proyectos</span>
+              <button onClick={() => openQuickCreate("project")} title="Nuevo proyecto" className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-brand-600">
+                <Plus size={14} />
+              </button>
+            </div>
             {teams.map((team) => {
               const teamProjects = projects.filter((p) => p.teamId === team.id && p.status !== "archived");
               const isOpen = expanded[team.id];

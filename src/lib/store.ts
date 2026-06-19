@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import type {
   User, Team, Project, Section, Task, CustomField, Notification,
   Portfolio, Goal, Rule, IntakeForm, ID, Comment, TaskMembership, Priority,
-  StatusUpdate, HealthColor,
+  StatusUpdate, HealthColor, GlobalRole, GoalLevel,
 } from "./types";
 import * as seed from "./seed";
 import { defaultWorkspaceData, pickWorkspaceData, type WorkspaceData } from "./workspace";
@@ -46,12 +46,32 @@ interface State {
   addSubtask: (parentId: ID, name: string) => void;
 
   // project / section actions
-  createProject: (input: { name: string; teamId: ID; color?: string }) => Project;
+  createProject: (input: { name: string; teamId: ID; color?: string; description?: string }) => Project;
+  updateProject: (id: ID, patch: Partial<Project>) => void;
+  archiveProject: (id: ID) => void;
+  deleteProject: (id: ID) => void;
   addSection: (projectId: ID, name: string) => Section;
   renameSection: (sectionId: ID, name: string) => void;
   deleteSection: (sectionId: ID) => void;
   toggleFavorite: (projectId: ID) => void;
   publishStatusUpdate: (projectId: ID, health: HealthColor, summary: string) => void;
+
+  // portfolios
+  createPortfolio: (input: { name: string; projectIds?: ID[] }) => Portfolio;
+  updatePortfolio: (id: ID, patch: Partial<Portfolio>) => void;
+  deletePortfolio: (id: ID) => void;
+  addProjectToPortfolio: (portfolioId: ID, projectId: ID) => void;
+  removeProjectFromPortfolio: (portfolioId: ID, projectId: ID) => void;
+
+  // users / equipo
+  addUser: (input: { name: string; email: string; role?: GlobalRole; jobTitle?: string; department?: string }) => User;
+  updateUser: (id: ID, patch: Partial<User>) => void;
+
+  // teams
+  createTeam: (input: { name: string; description?: string; color?: string }) => Team;
+
+  // goals
+  createGoal: (input: { title: string; level: GoalLevel; metricLabel?: string; targetValue?: number; unit?: string; period?: string }) => Goal;
 
   // notifications
   markNotificationRead: (id: ID) => void;
@@ -285,7 +305,7 @@ export const useStore = create<State>()(
       createProject: (input) => {
         const id = `p_${nanoid(8)}`;
         const project: Project = {
-          id, name: input.name, teamId: input.teamId,
+          id, name: input.name, teamId: input.teamId, description: input.description,
           color: input.color ?? "#6b46e5", icon: "Folder", status: "active",
           privacy: "public", defaultView: "board", ownerId: get().currentUserId,
           memberIds: [get().currentUserId], customFieldIds: [], statusUpdates: [],
@@ -295,6 +315,103 @@ export const useStore = create<State>()(
         }));
         set((s) => ({ projects: [...s.projects, project], sections: [...s.sections, ...baseSections] }));
         return project;
+      },
+
+      updateProject: (id, patch) =>
+        set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
+
+      archiveProject: (id) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? { ...p, status: p.status === "archived" ? "active" : "archived" } : p)),
+        })),
+
+      deleteProject: (id) =>
+        set((s) => ({
+          projects: s.projects.filter((p) => p.id !== id),
+          sections: s.sections.filter((sec) => sec.projectId !== id),
+          // quitar la pertenencia de tareas a este proyecto; eliminar tareas que queden sin proyecto
+          tasks: s.tasks
+            .map((t) => ({ ...t, memberships: t.memberships.filter((m) => m.projectId !== id) }))
+            .filter((t) => t.memberships.length > 0 || !!t.parentId),
+          portfolios: s.portfolios.map((pf) => ({ ...pf, projectIds: pf.projectIds.filter((pid) => pid !== id) })),
+        })),
+
+      createPortfolio: (input) => {
+        const portfolio: Portfolio = {
+          id: `pf_${nanoid(8)}`, name: input.name, ownerId: get().currentUserId,
+          projectIds: input.projectIds ?? [],
+        };
+        set((s) => ({ portfolios: [...s.portfolios, portfolio] }));
+        return portfolio;
+      },
+
+      updatePortfolio: (id, patch) =>
+        set((s) => ({ portfolios: s.portfolios.map((pf) => (pf.id === id ? { ...pf, ...patch } : pf)) })),
+
+      deletePortfolio: (id) =>
+        set((s) => ({ portfolios: s.portfolios.filter((pf) => pf.id !== id) })),
+
+      addProjectToPortfolio: (portfolioId, projectId) =>
+        set((s) => ({
+          portfolios: s.portfolios.map((pf) =>
+            pf.id === portfolioId && !pf.projectIds.includes(projectId)
+              ? { ...pf, projectIds: [...pf.projectIds, projectId] }
+              : pf
+          ),
+        })),
+
+      removeProjectFromPortfolio: (portfolioId, projectId) =>
+        set((s) => ({
+          portfolios: s.portfolios.map((pf) =>
+            pf.id === portfolioId ? { ...pf, projectIds: pf.projectIds.filter((id) => id !== projectId) } : pf
+          ),
+        })),
+
+      addUser: (input) => {
+        const initials = input.name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase() || "?";
+        const palette = ["#6b46e5", "#e5466b", "#46a5e5", "#2bb673", "#f59e0b", "#8b5cf6", "#0ea5e9", "#ec4899"];
+        const user: User = {
+          id: `u_${nanoid(8)}`, name: input.name, email: input.email,
+          initials, avatarColor: palette[get().users.length % palette.length],
+          role: input.role ?? "member", jobTitle: input.jobTitle, department: input.department,
+          active: true, timezone: "America/Santiago",
+        };
+        set((s) => ({ users: [...s.users, user] }));
+        return user;
+      },
+
+      updateUser: (id, patch) =>
+        set((s) => ({
+          users: s.users.map((u) => {
+            if (u.id !== id) return u;
+            const next = { ...u, ...patch };
+            if (patch.name) {
+              next.initials = patch.name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase() || u.initials;
+            }
+            return next;
+          }),
+        })),
+
+      createTeam: (input) => {
+        const palette = ["#6b46e5", "#e5466b", "#46a5e5", "#2bb673", "#f59e0b"];
+        const team: Team = {
+          id: `t_${nanoid(8)}`, name: input.name, description: input.description,
+          memberIds: [get().currentUserId], privacy: "public",
+          color: input.color ?? palette[get().teams.length % palette.length],
+        };
+        set((s) => ({ teams: [...s.teams, team] }));
+        return team;
+      },
+
+      createGoal: (input) => {
+        const goal: Goal = {
+          id: `g_${nanoid(8)}`, title: input.title, level: input.level,
+          ownerId: get().currentUserId, metricLabel: input.metricLabel ?? "Progreso",
+          targetValue: input.targetValue ?? 100, currentValue: 0, unit: input.unit ?? "%",
+          period: input.period ?? String(new Date().getFullYear()), linkedProjectIds: [],
+        };
+        set((s) => ({ goals: [...s.goals, goal] }));
+        return goal;
       },
 
       addSection: (projectId, name) => {
