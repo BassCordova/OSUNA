@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  CheckCircle2, Circle, Calendar, Flag, Trash2, Plus, Send,
+  CheckCircle2, Circle, Calendar, Flag, Trash2, Plus, Send, X,
   Diamond, ShieldCheck, Link2, MessageSquare, Activity as ActivityIcon, FolderPlus,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
@@ -30,13 +30,24 @@ export function TaskModal() {
   const addComment = useStore((s) => s.addComment);
   const addSubtask = useStore((s) => s.addSubtask);
   const addToProject = useStore((s) => s.addToProject);
+  const addDependency = useStore((s) => s.addDependency);
+  const removeDependency = useStore((s) => s.removeDependency);
   const userById = useStore((s) => s.userById);
 
   const [commentText, setCommentText] = useState("");
   const [newSubtask, setNewSubtask] = useState("");
   const [addingProject, setAddingProject] = useState(false);
+  const [newTag, setNewTag] = useState("");
+  const [addingDep, setAddingDep] = useState(false);
 
   if (!task) return null;
+
+  // candidatos a dependencia: tareas de los mismos proyectos, que no sean esta ni ya dependientes
+  const depCandidates = allTasks.filter((t) =>
+    !t.parentId && t.id !== task.id &&
+    !task.blockedByIds.includes(t.id) &&
+    t.memberships.some((m) => task.memberships.some((mm) => mm.projectId === m.projectId))
+  );
 
   const assignee = userById(task.assigneeId);
   const taskProjects = task.memberships
@@ -105,31 +116,70 @@ export function TaskModal() {
             </div>
 
             {/* Dependencies */}
-            {(task.blockedByIds.length > 0 || task.blockingIds.length > 0) && (
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400">Dependencias</label>
-                {task.blockedByIds.map((id) => {
-                  const dep = allTasks.find((t) => t.id === id);
-                  return dep ? (
-                    <button key={id} onClick={() => openTask(id)} className="flex items-center gap-2 text-sm text-gray-600 hover:text-brand-600">
-                      <Link2 size={14} className="text-amber-500" />
-                      <span>Bloqueada por:</span>
-                      <span className={cn("font-medium", dep.completed && "line-through text-gray-400")}>{dep.name}</span>
-                    </button>
-                  ) : null;
-                })}
-                {task.blockingIds.map((id) => {
-                  const dep = allTasks.find((t) => t.id === id);
-                  return dep ? (
-                    <button key={id} onClick={() => openTask(id)} className="flex items-center gap-2 text-sm text-gray-600 hover:text-brand-600">
-                      <Link2 size={14} className="text-blue-500" />
-                      <span>Bloqueando:</span>
-                      <span className="font-medium">{dep.name}</span>
-                    </button>
-                  ) : null;
-                })}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400">Dependencias</label>
+              {task.blockedByIds.map((id) => {
+                const dep = allTasks.find((t) => t.id === id);
+                return dep ? (
+                  <div key={id} className="group flex items-center gap-2 text-sm text-gray-600">
+                    <Link2 size={14} className="text-amber-500" />
+                    <span>Bloqueada por:</span>
+                    <button onClick={() => openTask(id)} className={cn("font-medium hover:text-brand-600", dep.completed && "line-through text-gray-400")}>{dep.name}</button>
+                    <button onClick={() => removeDependency(task.id, id)} className="ml-auto rounded p-0.5 text-gray-300 opacity-0 hover:text-red-500 group-hover:opacity-100"><X size={13} /></button>
+                  </div>
+                ) : null;
+              })}
+              {task.blockingIds.map((id) => {
+                const dep = allTasks.find((t) => t.id === id);
+                return dep ? (
+                  <button key={id} onClick={() => openTask(id)} className="flex items-center gap-2 text-sm text-gray-600 hover:text-brand-600">
+                    <Link2 size={14} className="text-blue-500" />
+                    <span>Bloqueando:</span>
+                    <span className="font-medium">{dep.name}</span>
+                  </button>
+                ) : null;
+              })}
+              {addingDep ? (
+                <select
+                  autoFocus
+                  onChange={(e) => { if (e.target.value) addDependency(task.id, e.target.value); setAddingDep(false); }}
+                  onBlur={() => setAddingDep(false)}
+                  className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+                >
+                  <option value="">Esta tarea está bloqueada por…</option>
+                  {depCandidates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              ) : (
+                depCandidates.length > 0 && (
+                  <button onClick={() => setAddingDep(true)} className="flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700">
+                    <Plus size={13} /> Añadir dependencia
+                  </button>
+                )
+              )}
+            </div>
+
+            {/* Tags */}
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">Etiquetas</label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {task.tags.map((tag) => (
+                  <span key={tag} className="group flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                    {tag}
+                    <button onClick={() => updateTask(task.id, { tags: task.tags.filter((t) => t !== tag) })} className="text-gray-400 hover:text-red-500"><X size={11} /></button>
+                  </span>
+                ))}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const t = newTag.trim().toLowerCase();
+                    if (t && !task.tags.includes(t)) updateTask(task.id, { tags: [...task.tags, t] });
+                    setNewTag("");
+                  }}
+                >
+                  <input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="+ etiqueta" className="w-24 rounded-full border border-dashed border-gray-300 px-2 py-0.5 text-xs outline-none focus:border-brand-400" />
+                </form>
               </div>
-            )}
+            </div>
 
             {/* Subtasks */}
             <div>
@@ -223,20 +273,27 @@ export function TaskModal() {
               </select>
             </Field>
 
-            <Field label="Fecha de vencimiento">
-              <div className="flex items-center gap-2">
-                <Calendar size={15} className="text-gray-400" />
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Inicio">
+                <input
+                  type="date"
+                  value={task.startDate ?? ""}
+                  onChange={(e) => updateTask(task.id, { startDate: e.target.value || undefined })}
+                  className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-brand-400"
+                />
+              </Field>
+              <Field label="Vencimiento">
                 <input
                   type="date"
                   value={task.dueDate ?? ""}
                   onChange={(e) => updateTask(task.id, { dueDate: e.target.value || undefined })}
                   className={cn(
-                    "flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-brand-400",
+                    "w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-brand-400",
                     isOverdue(task.dueDate, task.completed) && "text-red-600"
                   )}
                 />
-              </div>
-            </Field>
+              </Field>
+            </div>
 
             <Field label="Prioridad">
               <div className="flex items-center gap-2">
@@ -320,6 +377,23 @@ export function TaskModal() {
                 </Field>
               );
             })}
+
+            <Field label="Tipo de tarea">
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => updateTask(task.id, { isMilestone: !task.isMilestone })}
+                  className={cn("flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1 text-xs font-medium", task.isMilestone ? "border-purple-300 bg-purple-50 text-purple-700" : "border-gray-200 bg-white text-gray-500")}
+                >
+                  <Diamond size={12} /> Hito
+                </button>
+                <button
+                  onClick={() => updateTask(task.id, { isApproval: !task.isApproval, approvalStatus: !task.isApproval ? "pending" : undefined })}
+                  className={cn("flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1 text-xs font-medium", task.isApproval ? "border-sky-300 bg-sky-50 text-sky-700" : "border-gray-200 bg-white text-gray-500")}
+                >
+                  <ShieldCheck size={12} /> Aprobación
+                </button>
+              </div>
+            </Field>
 
             {task.isApproval && (
               <Field label="Estado de aprobación">

@@ -230,10 +230,13 @@ function EditProjectModal({
   onSave: (id: string, patch: { name?: string; description?: string; color?: string; teamId?: string }) => void;
 }) {
   const project = useStore((s) => s.projectById(projectId));
+  const customFields = useStore((s) => s.customFields);
+  const setProjectFields = useStore((s) => s.setProjectFields);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState("");
   const [teamId, setTeamId] = useState("");
+  const [fieldIds, setFieldIds] = useState<string[]>([]);
   const [lastId, setLastId] = useState<string | null>(null);
 
   if (project && open && project.id !== lastId) {
@@ -242,13 +245,14 @@ function EditProjectModal({
     setDescription(project.description ?? "");
     setColor(project.color);
     setTeamId(project.teamId);
+    setFieldIds(project.customFieldIds);
   }
   if (!project) return null;
 
   return (
     <Modal open={open} onClose={() => { onClose(); setLastId(null); }} title="Editar proyecto">
       <form
-        onSubmit={(e) => { e.preventDefault(); onSave(project.id, { name: name.trim() || project.name, description: description.trim() || undefined, color, teamId }); onClose(); setLastId(null); }}
+        onSubmit={(e) => { e.preventDefault(); onSave(project.id, { name: name.trim() || project.name, description: description.trim() || undefined, color, teamId }); setProjectFields(project.id, fieldIds); onClose(); setLastId(null); }}
         className="space-y-3 px-5 pb-5 pt-3"
       >
         <label className="block">
@@ -275,6 +279,26 @@ function EditProjectModal({
             </div>
           </div>
         </div>
+        {customFields.length > 0 && (
+          <div>
+            <span className="mb-1 block text-xs font-medium text-gray-500">Campos personalizados en este proyecto</span>
+            <div className="flex flex-wrap gap-1.5">
+              {customFields.map((cf) => {
+                const on = fieldIds.includes(cf.id);
+                return (
+                  <button
+                    key={cf.id}
+                    type="button"
+                    onClick={() => setFieldIds((ids) => on ? ids.filter((x) => x !== cf.id) : [...ids, cf.id])}
+                    className={cn("rounded-full border px-2.5 py-1 text-xs font-medium", on ? "border-brand-300 bg-brand-50 text-brand-700" : "border-gray-200 text-gray-500 hover:bg-gray-50")}
+                  >
+                    {cf.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={() => { onClose(); setLastId(null); }}>Cancelar</Button>
           <Button type="submit" variant="primary">Guardar</Button>

@@ -8,7 +8,7 @@ import {
 import { useDroppable } from "@dnd-kit/core";
 import { useSortable, SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, MoreHorizontal, CheckCircle2, Circle, Diamond, ShieldCheck, MessageSquare } from "lucide-react";
+import { Plus, MoreHorizontal, CheckCircle2, Circle, Diamond, ShieldCheck, MessageSquare, Pencil, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useUI } from "@/lib/ui-store";
 import { Avatar } from "@/components/Avatar";
@@ -102,15 +102,44 @@ function Column({ id, name, tasks, onAdd }: { id: ID; name: string; tasks: Task[
   const { setNodeRef, isOver } = useDroppable({ id });
   const [adding, setAdding] = useState(false);
   const [name2, setName2] = useState("");
+  const [menu, setMenu] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(name);
+  const renameSection = useStore((s) => s.renameSection);
+  const deleteSection = useStore((s) => s.deleteSection);
 
   return (
     <div className="flex w-72 shrink-0 flex-col rounded-xl bg-gray-100/80">
       <div className="flex items-center justify-between px-3 py-2.5">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-700">{name}</h3>
+        <div className="flex min-w-0 items-center gap-2">
+          {renaming ? (
+            <form onSubmit={(e) => { e.preventDefault(); if (renameValue.trim()) renameSection(id, renameValue.trim()); setRenaming(false); }}>
+              <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onBlur={() => setRenaming(false)} className="w-40 rounded border border-gray-300 bg-white px-1.5 py-0.5 text-sm font-semibold" />
+            </form>
+          ) : (
+            <h3 className="truncate text-sm font-semibold text-gray-700">{name}</h3>
+          )}
           <span className="rounded-full bg-gray-200 px-1.5 text-xs font-medium text-gray-500">{tasks.length}</span>
         </div>
-        <button className="rounded p-0.5 text-gray-400 hover:bg-gray-200"><MoreHorizontal size={16} /></button>
+        <div className="relative">
+          <button onClick={() => setMenu((v) => !v)} className="rounded p-0.5 text-gray-400 hover:bg-gray-200"><MoreHorizontal size={16} /></button>
+          {menu && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+              <div className="absolute right-0 top-7 z-20 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                <button onClick={() => { setRenaming(true); setRenameValue(name); setMenu(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                  <Pencil size={13} className="text-gray-400" /> Renombrar
+                </button>
+                <button onClick={() => { setAdding(true); setMenu(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                  <Plus size={13} className="text-gray-400" /> Añadir tarea
+                </button>
+                <button onClick={() => { if (confirm(`¿Eliminar la sección "${name}"? Las tareas que solo estén aquí se eliminarán.`)) deleteSection(id); setMenu(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">
+                  <Trash2 size={13} /> Eliminar
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div ref={setNodeRef} className={cn("flex-1 space-y-2 overflow-y-auto px-2 pb-2 min-h-[60px] rounded-lg transition-colors", isOver && "bg-brand-100/40")}>

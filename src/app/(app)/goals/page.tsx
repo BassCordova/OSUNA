@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Target, Hash, Plus } from "lucide-react";
+import { Target, Hash, Plus, Pencil, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Avatar } from "@/components/Avatar";
 import { Badge, Button, Modal } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import type { Goal, GoalLevel } from "@/lib/types";
+import type { Goal, GoalLevel, ID } from "@/lib/types";
 
 const levelMeta: Record<GoalLevel, { label: string; color: string; bg: string }> = {
   organization: { label: "Organización", color: "#6b46e5", bg: "#f4f1fe" },
@@ -20,7 +20,9 @@ export default function GoalsPage() {
   const userById = useStore((s) => s.userById);
   const updateGoalProgress = useStore((s) => s.updateGoalProgress);
   const createGoal = useStore((s) => s.createGoal);
+  const deleteGoal = useStore((s) => s.deleteGoal);
 
+  const [editGoal, setEditGoal] = useState<ID | null>(null);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [level, setLevel] = useState<GoalLevel>("team");
@@ -57,9 +59,15 @@ export default function GoalsPage() {
                 ))}
               </div>
             </div>
-            <div className="w-32 shrink-0 text-right">
-              <div className="text-2xl font-bold" style={{ color }}>{pct}%</div>
-              <div className="text-xs text-gray-400">{goal.currentValue} / {goal.targetValue} {goal.unit}</div>
+            <div className="flex shrink-0 items-start gap-1">
+              <div className="w-28 text-right">
+                <div className="text-2xl font-bold" style={{ color }}>{pct}%</div>
+                <div className="text-xs text-gray-400">{goal.currentValue} / {goal.targetValue} {goal.unit}</div>
+              </div>
+              <div className="flex flex-col">
+                <button onClick={() => setEditGoal(goal.id)} className="rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-600" title="Editar"><Pencil size={14} /></button>
+                <button onClick={() => { if (confirm(`¿Eliminar el objetivo "${goal.title}"?`)) deleteGoal(goal.id); }} className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600" title="Eliminar"><Trash2 size={14} /></button>
+              </div>
             </div>
           </div>
           <div className="mt-3 flex items-center gap-3">
@@ -141,6 +149,93 @@ export default function GoalsPage() {
           </div>
         </form>
       </Modal>
+
+      <EditGoalModal goalId={editGoal} onClose={() => setEditGoal(null)} />
     </div>
+  );
+}
+
+function EditGoalModal({ goalId, onClose }: { goalId: ID | null; onClose: () => void }) {
+  const goal = useStore((s) => s.goals.find((g) => g.id === goalId));
+  const projects = useStore((s) => s.projects);
+  const updateGoal = useStore((s) => s.updateGoal);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [targetValue, setTargetValue] = useState("100");
+  const [currentValue, setCurrentValue] = useState("0");
+  const [unit, setUnit] = useState("%");
+  const [linked, setLinked] = useState<string[]>([]);
+  const [lastId, setLastId] = useState<ID | null>(null);
+
+  if (goal && goal.id !== lastId) {
+    setLastId(goal.id);
+    setTitle(goal.title);
+    setDescription(goal.description ?? "");
+    setTargetValue(String(goal.targetValue));
+    setCurrentValue(String(goal.currentValue));
+    setUnit(goal.unit);
+    setLinked(goal.linkedProjectIds);
+  }
+  if (!goal) return null;
+
+  return (
+    <Modal open onClose={() => { onClose(); setLastId(null); }} title="Editar objetivo">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          updateGoal(goal.id, {
+            title: title.trim() || goal.title, description: description.trim() || undefined,
+            targetValue: Number(targetValue) || goal.targetValue, currentValue: Number(currentValue) || 0,
+            unit: unit.trim() || goal.unit, linkedProjectIds: linked,
+          });
+          onClose(); setLastId(null);
+        }}
+        className="space-y-3 px-5 pb-5 pt-3"
+      >
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-gray-500">Título</span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus className="modal-input" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-gray-500">Descripción</span>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="modal-input resize-none" />
+        </label>
+        <div className="grid grid-cols-3 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Actual</span>
+            <input type="number" value={currentValue} onChange={(e) => setCurrentValue(e.target.value)} className="modal-input" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Meta</span>
+            <input type="number" value={targetValue} onChange={(e) => setTargetValue(e.target.value)} className="modal-input" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Unidad</span>
+            <input value={unit} onChange={(e) => setUnit(e.target.value)} className="modal-input" />
+          </label>
+        </div>
+        <div>
+          <span className="mb-1 block text-xs font-medium text-gray-500">Proyectos que contribuyen</span>
+          <div className="flex flex-wrap gap-1.5">
+            {projects.map((p) => {
+              const on = linked.includes(p.id);
+              return (
+                <button
+                  key={p.id} type="button"
+                  onClick={() => setLinked((ids) => on ? ids.filter((x) => x !== p.id) : [...ids, p.id])}
+                  className={cn("flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium", on ? "border-brand-300 bg-brand-50 text-brand-700" : "border-gray-200 text-gray-500 hover:bg-gray-50")}
+                >
+                  <Hash size={11} style={{ color: p.color }} /> {p.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={() => { onClose(); setLastId(null); }}>Cancelar</Button>
+          <Button type="submit" variant="primary">Guardar</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

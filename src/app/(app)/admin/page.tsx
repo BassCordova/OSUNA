@@ -7,7 +7,7 @@ import { useStore } from "@/lib/store";
 import { Avatar } from "@/components/Avatar";
 import { Button, Modal } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import type { GlobalRole, ID } from "@/lib/types";
+import type { GlobalRole, ID, CustomFieldType } from "@/lib/types";
 
 const roleMeta: Record<GlobalRole, { label: string; color: string; bg: string }> = {
   admin: { label: "Admin", color: "#6b46e5", bg: "#f4f1fe" },
@@ -27,12 +27,15 @@ export default function AdminPage() {
   const updateUser = useStore((s) => s.updateUser);
   const deleteUser = useStore((s) => s.deleteUser);
   const createTeam = useStore((s) => s.createTeam);
+  const createCustomField = useStore((s) => s.createCustomField);
+  const deleteCustomField = useStore((s) => s.deleteCustomField);
   const currentUserId = useStore((s) => s.currentUserId);
   const [tab, setTab] = useState<"users" | "teams" | "fields">("users");
 
   const [addUserOpen, setAddUserOpen] = useState(false);
   const [editUser, setEditUser] = useState<ID | null>(null);
   const [addTeamOpen, setAddTeamOpen] = useState(false);
+  const [addFieldOpen, setAddFieldOpen] = useState(false);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
@@ -63,6 +66,7 @@ export default function AdminPage() {
         </div>
         {tab === "users" && <Button variant="primary" size="sm" onClick={() => setAddUserOpen(true)}><Plus size={14} /> Añadir usuario</Button>}
         {tab === "teams" && <Button variant="primary" size="sm" onClick={() => setAddTeamOpen(true)}><Plus size={14} /> Nuevo equipo</Button>}
+        {tab === "fields" && <Button variant="primary" size="sm" onClick={() => setAddFieldOpen(true)}><Plus size={14} /> Nuevo campo</Button>}
       </div>
 
       {tab === "users" && (
@@ -165,13 +169,14 @@ export default function AdminPage() {
                 <th className="px-4 py-2">Campo</th>
                 <th className="px-4 py-2">Tipo</th>
                 <th className="px-4 py-2">Opciones</th>
+                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {customFields.map((cf) => (
-                <tr key={cf.id} className="border-b border-gray-50 last:border-0">
+                <tr key={cf.id} className="group border-b border-gray-50 last:border-0">
                   <td className="px-4 py-2.5 text-sm font-medium text-gray-800">{cf.name}</td>
-                  <td className="px-4 py-2.5 text-sm text-gray-500">{cf.type}</td>
+                  <td className="px-4 py-2.5 text-sm text-gray-500">{fieldTypeLabel(cf.type)}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex flex-wrap gap-1">
                       {cf.options?.map((o) => (
@@ -179,8 +184,16 @@ export default function AdminPage() {
                       )) ?? <span className="text-xs text-gray-400">—</span>}
                     </div>
                   </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <button onClick={() => { if (confirm(`¿Eliminar el campo "${cf.name}"? Se quitará de todos los proyectos.`)) deleteCustomField(cf.id); }} className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600 group-hover:text-gray-400" title="Eliminar campo">
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
                 </tr>
               ))}
+              {customFields.length === 0 && (
+                <tr><td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-400">Sin campos. Crea el primero con “Nuevo campo”.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -189,7 +202,51 @@ export default function AdminPage() {
       <AddUserModal open={addUserOpen} onClose={() => setAddUserOpen(false)} onAdd={addUser} />
       <EditUserModal userId={editUser} onClose={() => setEditUser(null)} />
       <AddTeamModal open={addTeamOpen} onClose={() => setAddTeamOpen(false)} onAdd={createTeam} />
+      <AddFieldModal open={addFieldOpen} onClose={() => setAddFieldOpen(false)} onAdd={createCustomField} />
     </div>
+  );
+}
+
+const fieldTypes: { value: CustomFieldType; label: string }[] = [
+  { value: "text", label: "Texto" },
+  { value: "number", label: "Número" },
+  { value: "single_select", label: "Desplegable (una opción)" },
+  { value: "multi_select", label: "Desplegable (varias)" },
+  { value: "date", label: "Fecha" },
+  { value: "person", label: "Persona" },
+];
+function fieldTypeLabel(t: CustomFieldType) { return fieldTypes.find((f) => f.value === t)?.label ?? t; }
+
+function AddFieldModal({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: ReturnType<typeof useStore.getState>["createCustomField"] }) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<CustomFieldType>("single_select");
+  const [optionsText, setOptionsText] = useState("");
+  const reset = () => { setName(""); setType("single_select"); setOptionsText(""); };
+  const needsOptions = type === "single_select" || type === "multi_select";
+  return (
+    <Modal open={open} onClose={() => { onClose(); reset(); }} title="Nuevo campo personalizado">
+      <form
+        onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; onAdd({ name: name.trim(), type, options: needsOptions ? optionsText.split(",").map((o) => o.trim()).filter(Boolean) : undefined }); onClose(); reset(); }}
+        className="space-y-3 px-5 pb-5 pt-3"
+      >
+        <Labeled label="Nombre"><input value={name} onChange={(e) => setName(e.target.value)} autoFocus className="modal-input" placeholder="Ej. Etapa, Cliente, Prioridad…" /></Labeled>
+        <Labeled label="Tipo">
+          <select value={type} onChange={(e) => setType(e.target.value as CustomFieldType)} className="modal-input">
+            {fieldTypes.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+          </select>
+        </Labeled>
+        {needsOptions && (
+          <Labeled label="Opciones (separadas por coma)">
+            <input value={optionsText} onChange={(e) => setOptionsText(e.target.value)} className="modal-input" placeholder="Pendiente, En curso, Listo" />
+          </Labeled>
+        )}
+        <p className="text-xs text-gray-400">Después podrás añadir este campo a cada proyecto desde su menú ⋯ → Editar.</p>
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={() => { onClose(); reset(); }}>Cancelar</Button>
+          <Button type="submit" variant="primary" disabled={!name.trim()}>Crear campo</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

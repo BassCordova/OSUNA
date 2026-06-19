@@ -56,6 +56,16 @@ interface State {
   toggleFavorite: (projectId: ID) => void;
   publishStatusUpdate: (projectId: ID, health: HealthColor, summary: string) => void;
 
+  // campos personalizados (biblioteca + asignación a proyecto)
+  createCustomField: (input: { name: string; type: CustomField["type"]; options?: string[] }) => CustomField;
+  updateCustomField: (id: ID, patch: Partial<CustomField>) => void;
+  deleteCustomField: (id: ID) => void;
+  setProjectFields: (projectId: ID, fieldIds: ID[]) => void;
+
+  // dependencias entre tareas
+  addDependency: (taskId: ID, blockedById: ID) => void;
+  removeDependency: (taskId: ID, blockedById: ID) => void;
+
   // portfolios
   createPortfolio: (input: { name: string; projectIds?: ID[] }) => Portfolio;
   updatePortfolio: (id: ID, patch: Partial<Portfolio>) => void;
@@ -495,6 +505,50 @@ export const useStore = create<State>()(
       toggleFavorite: (projectId) =>
         set((s) => ({
           projects: s.projects.map((p) => (p.id === projectId ? { ...p, favorite: !p.favorite } : p)),
+        })),
+
+      createCustomField: (input) => {
+        const palette = ["#94a3b8", "#f59e0b", "#46a5e5", "#8b5cf6", "#2bb673", "#e5466b", "#0ea5e9"];
+        const field: CustomField = {
+          id: `cf_${nanoid(8)}`, name: input.name, type: input.type,
+          options: (input.type === "single_select" || input.type === "multi_select")
+            ? (input.options ?? []).filter(Boolean).map((label, i) => ({ id: `o_${nanoid(6)}`, label, color: palette[i % palette.length] }))
+            : undefined,
+        };
+        set((s) => ({ customFields: [...s.customFields, field] }));
+        return field;
+      },
+
+      updateCustomField: (id, patch) =>
+        set((s) => ({ customFields: s.customFields.map((cf) => (cf.id === id ? { ...cf, ...patch } : cf)) })),
+
+      deleteCustomField: (id) =>
+        set((s) => ({
+          customFields: s.customFields.filter((cf) => cf.id !== id),
+          projects: s.projects.map((p) => ({ ...p, customFieldIds: p.customFieldIds.filter((fid) => fid !== id) })),
+        })),
+
+      setProjectFields: (projectId, fieldIds) =>
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, customFieldIds: fieldIds } : p)) })),
+
+      addDependency: (taskId, blockedById) => {
+        if (taskId === blockedById) return;
+        set((s) => ({
+          tasks: s.tasks.map((t) => {
+            if (t.id === taskId && !t.blockedByIds.includes(blockedById)) return { ...t, blockedByIds: [...t.blockedByIds, blockedById] };
+            if (t.id === blockedById && !t.blockingIds.includes(taskId)) return { ...t, blockingIds: [...t.blockingIds, taskId] };
+            return t;
+          }),
+        }));
+      },
+
+      removeDependency: (taskId, blockedById) =>
+        set((s) => ({
+          tasks: s.tasks.map((t) => {
+            if (t.id === taskId) return { ...t, blockedByIds: t.blockedByIds.filter((id) => id !== blockedById) };
+            if (t.id === blockedById) return { ...t, blockingIds: t.blockingIds.filter((id) => id !== taskId) };
+            return t;
+          }),
         })),
 
       publishStatusUpdate: (projectId, health, summary) => {
