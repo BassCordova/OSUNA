@@ -118,14 +118,22 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
               const isOpen = expanded[team.id];
               return (
                 <div key={team.id}>
-                  <button
-                    onClick={() => setExpanded((e) => ({ ...e, [team.id]: !e[team.id] }))}
-                    className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                  >
-                    {isOpen ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
-                    <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: team.color }} />
-                    <span className="truncate">{team.name}</span>
-                  </button>
+                  <div className={cn(
+                    "flex w-full items-center gap-1 rounded-md pr-1 text-sm font-medium",
+                    pathname === `/team/${team.id}` ? "bg-brand-50 text-brand-700" : "text-gray-700 hover:bg-gray-100"
+                  )}>
+                    <button
+                      onClick={() => setExpanded((e) => ({ ...e, [team.id]: !e[team.id] }))}
+                      className="rounded p-1 text-gray-400 hover:bg-gray-200"
+                      title={isOpen ? "Contraer" : "Expandir"}
+                    >
+                      {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                    <Link href={`/team/${team.id}`} onClick={onClose} className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5">
+                      <span className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: team.color }} />
+                      <span className="truncate">{team.name}</span>
+                    </Link>
+                  </div>
                   {isOpen && (
                     <div className="ml-3 border-l border-gray-100 pl-1">
                       {teamProjects.map((p) => (

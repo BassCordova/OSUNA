@@ -4,7 +4,7 @@ import { useState, use } from "react";
 import { useRouter } from "next/navigation";
 import {
   List, Kanban, Calendar, GanttChartSquare, LayoutDashboard, Star,
-  Filter, Users, Flag, CheckCircle2, X, MoreHorizontal, Pencil, Archive, Trash2,
+  Filter, Users, Flag, CheckCircle2, X, MoreHorizontal, Pencil, Archive, Trash2, Settings2,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { ListView } from "@/components/views/ListView";
@@ -29,6 +29,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const { id } = use(params);
   const router = useRouter();
   const project = useStore((s) => s.projectById(id));
+  const teams = useStore((s) => s.teams);
   const team = useStore((s) => s.teams.find((t) => t.id === project?.teamId));
   const tasksOf = useStore((s) => s.tasksOf(id));
   const users = useStore((s) => s.users);
@@ -48,6 +49,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
 
   if (!project) {
     return (
@@ -105,6 +107,9 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                       <div className="absolute left-0 top-8 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
                         <button onClick={() => { setRenaming(true); setRenameValue(project.name); setMenuOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
                           <Pencil size={14} className="text-gray-400" /> Renombrar
+                        </button>
+                        <button onClick={() => { setEditOpen(true); setMenuOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                          <Settings2 size={14} className="text-gray-400" /> Editar (color, equipo…)
                         </button>
                         <button onClick={() => { archiveProject(project.id); setMenuOpen(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
                           <Archive size={14} className="text-gray-400" /> {project.status === "archived" ? "Desarchivar" : "Archivar"}
@@ -209,7 +214,73 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         projectId={id}
         onPublish={(health, summary) => { publishStatusUpdate(id, health, summary); setStatusModal(false); }}
       />
+
+      <EditProjectModal open={editOpen} onClose={() => setEditOpen(false)} projectId={id} teams={teams} onSave={updateProject} />
     </div>
+  );
+}
+
+const projectPalette = ["#6b46e5", "#e5466b", "#46a5e5", "#2bb673", "#f59e0b", "#8b5cf6", "#0ea5e9", "#ec4899"];
+
+function EditProjectModal({
+  open, onClose, projectId, teams, onSave,
+}: {
+  open: boolean; onClose: () => void; projectId: string;
+  teams: { id: string; name: string }[];
+  onSave: (id: string, patch: { name?: string; description?: string; color?: string; teamId?: string }) => void;
+}) {
+  const project = useStore((s) => s.projectById(projectId));
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [color, setColor] = useState("");
+  const [teamId, setTeamId] = useState("");
+  const [lastId, setLastId] = useState<string | null>(null);
+
+  if (project && open && project.id !== lastId) {
+    setLastId(project.id);
+    setName(project.name);
+    setDescription(project.description ?? "");
+    setColor(project.color);
+    setTeamId(project.teamId);
+  }
+  if (!project) return null;
+
+  return (
+    <Modal open={open} onClose={() => { onClose(); setLastId(null); }} title="Editar proyecto">
+      <form
+        onSubmit={(e) => { e.preventDefault(); onSave(project.id, { name: name.trim() || project.name, description: description.trim() || undefined, color, teamId }); onClose(); setLastId(null); }}
+        className="space-y-3 px-5 pb-5 pt-3"
+      >
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-gray-500">Nombre</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus className="modal-input" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-gray-500">Descripción</span>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className="modal-input resize-none" />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-gray-500">Equipo</span>
+            <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className="modal-input">
+              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </label>
+          <div>
+            <span className="mb-1 block text-xs font-medium text-gray-500">Color</span>
+            <div className="flex flex-wrap gap-1.5">
+              {projectPalette.map((c) => (
+                <button key={c} type="button" onClick={() => setColor(c)} className={cn("h-6 w-6 rounded-full", color === c && "ring-2 ring-offset-1 ring-gray-400")} style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={() => { onClose(); setLastId(null); }}>Cancelar</Button>
+          <Button type="submit" variant="primary">Guardar</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

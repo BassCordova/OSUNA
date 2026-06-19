@@ -66,12 +66,19 @@ interface State {
   // users / equipo
   addUser: (input: { name: string; email: string; role?: GlobalRole; jobTitle?: string; department?: string }) => User;
   updateUser: (id: ID, patch: Partial<User>) => void;
+  deleteUser: (id: ID) => void;
 
   // teams
   createTeam: (input: { name: string; description?: string; color?: string }) => Team;
+  updateTeam: (id: ID, patch: Partial<Team>) => void;
+  deleteTeam: (id: ID) => void;
+  addTeamMember: (teamId: ID, userId: ID) => void;
+  removeTeamMember: (teamId: ID, userId: ID) => void;
 
   // goals
   createGoal: (input: { title: string; level: GoalLevel; metricLabel?: string; targetValue?: number; unit?: string; period?: string }) => Goal;
+  updateGoal: (id: ID, patch: Partial<Goal>) => void;
+  deleteGoal: (id: ID) => void;
 
   // notifications
   markNotificationRead: (id: ID) => void;
@@ -392,6 +399,21 @@ export const useStore = create<State>()(
           }),
         })),
 
+      deleteUser: (id) => {
+        if (id === get().currentUserId) return; // no eliminar tu propia identidad
+        set((s) => ({
+          users: s.users.filter((u) => u.id !== id),
+          // desasignar tareas y quitar de seguidores
+          tasks: s.tasks.map((t) => ({
+            ...t,
+            assigneeId: t.assigneeId === id ? undefined : t.assigneeId,
+            followerIds: t.followerIds.filter((fid) => fid !== id),
+          })),
+          teams: s.teams.map((t) => ({ ...t, memberIds: t.memberIds.filter((mid) => mid !== id) })),
+          projects: s.projects.map((p) => ({ ...p, memberIds: p.memberIds.filter((mid) => mid !== id) })),
+        }));
+      },
+
       createTeam: (input) => {
         const palette = ["#6b46e5", "#e5466b", "#46a5e5", "#2bb673", "#f59e0b"];
         const team: Team = {
@@ -403,6 +425,35 @@ export const useStore = create<State>()(
         return team;
       },
 
+      updateTeam: (id, patch) =>
+        set((s) => ({ teams: s.teams.map((t) => (t.id === id ? { ...t, ...patch } : t)) })),
+
+      deleteTeam: (id) => {
+        const teams = get().teams;
+        if (teams.length <= 1) return; // siempre debe quedar al menos un equipo
+        const fallback = teams.find((t) => t.id !== id);
+        if (!fallback) return;
+        set((s) => ({
+          teams: s.teams.filter((t) => t.id !== id),
+          // los proyectos del equipo eliminado pasan al primer equipo restante
+          projects: s.projects.map((p) => (p.teamId === id ? { ...p, teamId: fallback.id } : p)),
+        }));
+      },
+
+      addTeamMember: (teamId, userId) =>
+        set((s) => ({
+          teams: s.teams.map((t) =>
+            t.id === teamId && !t.memberIds.includes(userId) ? { ...t, memberIds: [...t.memberIds, userId] } : t
+          ),
+        })),
+
+      removeTeamMember: (teamId, userId) =>
+        set((s) => ({
+          teams: s.teams.map((t) =>
+            t.id === teamId ? { ...t, memberIds: t.memberIds.filter((id) => id !== userId) } : t
+          ),
+        })),
+
       createGoal: (input) => {
         const goal: Goal = {
           id: `g_${nanoid(8)}`, title: input.title, level: input.level,
@@ -413,6 +464,12 @@ export const useStore = create<State>()(
         set((s) => ({ goals: [...s.goals, goal] }));
         return goal;
       },
+
+      updateGoal: (id, patch) =>
+        set((s) => ({ goals: s.goals.map((g) => (g.id === id ? { ...g, ...patch } : g)) })),
+
+      deleteGoal: (id) =>
+        set((s) => ({ goals: s.goals.filter((g) => g.id !== id && g.parentId !== id) })),
 
       addSection: (projectId, name) => {
         const section: Section = {

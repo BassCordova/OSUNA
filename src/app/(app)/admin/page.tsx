@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, Users, Layers, Database, RotateCcw, Plus, Pencil, X, Check } from "lucide-react";
+import Link from "next/link";
+import { Settings, Users, Layers, Database, RotateCcw, Plus, Pencil, Trash2, ArrowRight } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Avatar } from "@/components/Avatar";
-import { Badge, Button, Modal } from "@/components/ui";
+import { Button, Modal } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { GlobalRole, ID } from "@/lib/types";
 
@@ -24,7 +25,9 @@ export default function AdminPage() {
   const resetDemo = useStore((s) => s.resetDemo);
   const addUser = useStore((s) => s.addUser);
   const updateUser = useStore((s) => s.updateUser);
+  const deleteUser = useStore((s) => s.deleteUser);
   const createTeam = useStore((s) => s.createTeam);
+  const currentUserId = useStore((s) => s.currentUserId);
   const [tab, setTab] = useState<"users" | "teams" | "fields">("users");
 
   const [addUserOpen, setAddUserOpen] = useState(false);
@@ -107,9 +110,20 @@ export default function AdminPage() {
                     </button>
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <button onClick={() => setEditUser(u.id)} className="rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-600 group-hover:text-gray-400" title="Editar">
-                      <Pencil size={15} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => setEditUser(u.id)} className="rounded p-1 text-gray-300 hover:bg-gray-100 hover:text-gray-600 group-hover:text-gray-400" title="Editar">
+                        <Pencil size={15} />
+                      </button>
+                      {u.id !== currentUserId && (
+                        <button
+                          onClick={() => { if (confirm(`¿Eliminar a ${u.name}? Sus tareas quedarán sin asignar.`)) deleteUser(u.id); }}
+                          className="rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-600 group-hover:text-gray-400"
+                          title="Eliminar usuario"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -124,10 +138,11 @@ export default function AdminPage() {
             const memberUsers = t.memberIds.map((id) => users.find((u) => u.id === id)).filter(Boolean);
             const teamProjects = projects.filter((p) => p.teamId === t.id);
             return (
-              <div key={t.id} className="rounded-xl border border-gray-200 bg-white p-4">
+              <Link key={t.id} href={`/team/${t.id}`} className="group rounded-xl border border-gray-200 bg-white p-4 transition-colors hover:border-brand-300">
                 <div className="flex items-center gap-2">
                   <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: t.color }} />
                   <h3 className="text-base font-semibold text-gray-900">{t.name}</h3>
+                  <ArrowRight size={15} className="ml-auto text-gray-300 group-hover:text-brand-500" />
                 </div>
                 <p className="mt-1 text-sm text-gray-500">{t.description}</p>
                 <div className="mt-3 flex items-center justify-between">
@@ -136,7 +151,7 @@ export default function AdminPage() {
                   </div>
                   <span className="text-xs text-gray-400">{teamProjects.length} proyectos</span>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
